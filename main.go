@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"notes-api/api"
+	"notes-api/pkg/api"
 
 	"github.com/sirupsen/logrus"
 )

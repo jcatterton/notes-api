@@ -4,7 +4,7 @@ import (
 	"context"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"notes-api/models"
+	"notes-api/pkg/models"
 )
 
 type NoteDaoHandler interface {

@@ -1,16 +1,25 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"notes-api/dao"
-	"notes-api/models"
+	"io"
+	"mime/multipart"
+	"notes-api/pkg/dao"
+	"notes-api/pkg/external"
+	"notes-api/pkg/models"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 type NotesService struct {
 	Dao dao.NotesDao
+	Ext external.ExtAPI
 }
 
 func (svc *NotesService) Ping(ctx context.Context) error {
@@ -83,4 +92,55 @@ func (svc *NotesService) CreateNote(ctx context.Context, noteRequest models.Note
 	}
 
 	return id.Hex(), nil
+}
+
+func (svc *NotesService) SendToContentService(ctx context.Context, id string) error {
+	logger := logrus.WithContext(ctx)
+
+	notes, err := svc.GetNotes(ctx, id)
+	if err != nil {
+		return err
+	}
+	note := notes[0]
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	fileName := strings.Replace(note.Name, " ", "", -1)
+	extension := filepath.Ext(fileName)
+	if extension != "" {
+		fileName = fileName[0 : len(fileName)-len(extension)]
+	}
+	fileName = fmt.Sprintf("%v.txt", fileName)
+
+	formFile, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(formFile, bytes.NewBuffer([]byte(note.Text))); err != nil {
+		return err
+	}
+
+	if err := writer.Close(); err != nil {
+		logger.WithError(err).Error("Error closing multipart writer")
+	}
+
+	if err := svc.Ext.SendToContentService(ctx, body, writer.FormDataContentType()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *NotesService) ValidateToken(ctx context.Context, token string) error {
+	if err := svc.Ext.ValidateToken(ctx, token); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *NotesService) SetToken(token string) {
+	svc.Ext.Token = token
 }

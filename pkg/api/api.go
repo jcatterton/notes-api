@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
-	"notes-api/dao"
-	"notes-api/models"
-	"notes-api/service"
+	"notes-api/pkg/dao"
+	"notes-api/pkg/external"
+	"notes-api/pkg/models"
+	"notes-api/pkg/service"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -56,8 +58,18 @@ func route(ctx context.Context) (*mux.Router, error) {
 		Collection: os.Getenv("COLLECTION"),
 	}
 
+	extHandler := external.ExtAPI{
+		Client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+		ContentServiceURL: os.Getenv("CONTENT_SERVICE_URL"),
+		LoginServiceURL:   os.Getenv("LOGIN_SERVICE_URL"),
+		Token:             "",
+	}
+
 	notesService := service.NotesService{
 		Dao: notesDao,
+		Ext: extHandler,
 	}
 
 	router := mux.NewRouter()
@@ -67,6 +79,7 @@ func route(ctx context.Context) (*mux.Router, error) {
 	router.Handle("/note/{id}", editNote(ctx, &notesService)).Methods(http.MethodPut)
 	router.Handle("/note/{id}", deleteNote(ctx, &notesService)).Methods(http.MethodDelete)
 	router.Handle("/note", createNote(ctx, &notesService)).Methods(http.MethodPost)
+	router.Handle("/save/{id}", sendToContentService(ctx, &notesService)).Methods(http.MethodPost)
 
 	return router, nil
 }
@@ -91,6 +104,19 @@ func getNotes(ctx context.Context, svc service.NoteServiceHandler) http.HandlerF
 		logger := logrus.WithContext(ctx)
 		defer closeRequestBody(ctx, r)
 
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
 		notes, err := svc.GetNotes(ctx, "")
 		if err != nil {
 			logger.WithError(err).Error("Error retrieving notes")
@@ -106,6 +132,19 @@ func getNote(ctx context.Context, svc service.NoteServiceHandler) http.HandlerFu
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logrus.WithContext(ctx)
 		defer closeRequestBody(ctx, r)
+
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
 
 		id := mux.Vars(r)["id"]
 
@@ -133,6 +172,19 @@ func editNote(ctx context.Context, svc service.NoteServiceHandler) http.HandlerF
 		logger := logrus.WithContext(ctx)
 		defer closeRequestBody(ctx, r)
 
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
 		id := mux.Vars(r)["id"]
 
 		var note models.NoteRequest
@@ -157,6 +209,19 @@ func createNote(ctx context.Context, svc service.NoteServiceHandler) http.Handle
 		logger := logrus.WithContext(ctx)
 		defer closeRequestBody(ctx, r)
 
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
 		var note models.NoteRequest
 		if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
 			logger.WithError(err).Error("Error decoding request body")
@@ -180,6 +245,19 @@ func deleteNote(ctx context.Context, svc service.NoteServiceHandler) http.Handle
 		logger := logrus.WithContext(ctx)
 		defer closeRequestBody(ctx, r)
 
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
 		id := mux.Vars(r)["id"]
 
 		if err := svc.DeleteNote(ctx, id); err != nil {
@@ -189,6 +267,38 @@ func deleteNote(ctx context.Context, svc service.NoteServiceHandler) http.Handle
 		}
 
 		respondWithSuccess(ctx, w, http.StatusOK, fmt.Sprintf("Note with ID '%v' deleted successfully", id))
+	}
+}
+
+func sendToContentService(ctx context.Context, svc service.NoteServiceHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := logrus.WithContext(ctx)
+		defer closeRequestBody(ctx, r)
+
+		token, err := getAuthToken(r)
+		if err != nil {
+			logrus.WithError(err).Error("Error retrieving authorization token from request")
+			respondWithError(ctx, w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := svc.ValidateToken(ctx, token); err != nil {
+			logrus.WithError(err).Error("Error validating token")
+			respondWithError(ctx, w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
+		svc.SetToken(token)
+
+		id := mux.Vars(r)["id"]
+
+		if err := svc.SendToContentService(ctx, id); err != nil {
+			logger.WithError(err).Error("Error sending note to content service")
+			respondWithError(ctx, w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		respondWithSuccess(ctx, w, http.StatusOK, "Note successfully sent to content service")
 	}
 }
 
@@ -248,4 +358,14 @@ func shutdownGracefully(server *http.Server) {
 		<-c.Done()
 		os.Exit(0)
 	}()
+}
+
+func getAuthToken(r *http.Request) (string, error) {
+	tokenHeader := r.Header.Get("Authorization")
+	if tokenHeader == "" {
+		return "", errors.New("no authorization header found")
+	} else if (len(tokenHeader) >= 7 && tokenHeader[:7] != "Bearer ") || len(strings.Split(tokenHeader, " ")) != 2 {
+		return "", errors.New("authorization header must be in format 'Bearer' <token>")
+	}
+	return strings.Split(tokenHeader, " ")[1], nil
 }
