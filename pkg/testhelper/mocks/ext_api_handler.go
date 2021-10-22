@@ -28,6 +28,11 @@ func (_m *ExtAPIHandler) SendToContentService(ctx context.Context, body bytes.Bu
 	return r0
 }
 
+// SetToken provides a mock function with given fields: token
+func (_m *ExtAPIHandler) SetToken(token string) {
+	_m.Called(token)
+}
+
 // ValidateToken provides a mock function with given fields: ctx, token
 func (_m *ExtAPIHandler) ValidateToken(ctx context.Context, token string) error {
 	ret := _m.Called(ctx, token)

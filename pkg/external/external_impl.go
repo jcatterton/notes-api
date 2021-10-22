@@ -19,9 +19,13 @@ type ExtAPI struct {
 	Token             string
 }
 
+func (ext *ExtAPI) SetToken(token string) {
+	ext.Token = token
+}
+
 func (ext *ExtAPI) ValidateToken(ctx context.Context, token string) error {
 	if ext.LoginServiceURL == "" {
-		return errors.New("login service url cannot be emtpy")
+		return errors.New("login service url cannot be empty")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%v/token", ext.LoginServiceURL), nil)
@@ -44,6 +48,10 @@ func (ext *ExtAPI) ValidateToken(ctx context.Context, token string) error {
 }
 
 func (ext *ExtAPI) SendToContentService(ctx context.Context, body bytes.Buffer, contentType string) error {
+	if ext.ContentServiceURL == "" {
+		return errors.New("content service url cannot be empty")
+	}
+
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%v/upload", ext.ContentServiceURL), &body)
 	if err != nil {
 		return err

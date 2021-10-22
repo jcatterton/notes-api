@@ -68,8 +68,8 @@ func route(ctx context.Context) (*mux.Router, error) {
 	}
 
 	notesService := service.NotesService{
-		Dao: notesDao,
-		Ext: extHandler,
+		Dao: &notesDao,
+		Ext: &extHandler,
 	}
 
 	router := mux.NewRouter()

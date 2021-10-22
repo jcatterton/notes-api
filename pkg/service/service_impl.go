@@ -18,8 +18,8 @@ import (
 )
 
 type NotesService struct {
-	Dao dao.NotesDao
-	Ext external.ExtAPI
+	Dao dao.NoteDaoHandler
+	Ext external.ExtAPIHandler
 }
 
 func (svc *NotesService) Ping(ctx context.Context) error {
@@ -54,6 +54,7 @@ func (svc *NotesService) UpdateNote(ctx context.Context, id string, noteRequest 
 		"$set": bson.M{
 			"name": noteRequest.Name,
 			"text": noteRequest.Text,
+			"lastEditedTs": time.Now(),
 		},
 	}
 
@@ -142,5 +143,5 @@ func (svc *NotesService) ValidateToken(ctx context.Context, token string) error 
 }
 
 func (svc *NotesService) SetToken(token string) {
-	svc.Ext.Token = token
+	svc.Ext.SetToken(token)
 }

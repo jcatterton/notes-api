@@ -1,0 +1,19 @@
+name: notes-api
+replicas:
+  max: 5
+  min: 2
+image:
+  repository: 192.168.1.15:5000/notes-api
+  tag: 1.0.1
+  pullPolicy: Always
+service:
+  type: NodePort
+  internalPort: 8006
+  externalPort: 80
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
